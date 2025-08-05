@@ -48,10 +48,8 @@ class ChordGridEditor:
             self.selected_chord_idx = max(0, min(self.selected_chord_idx, len(self.progression) - 1))
 
     def handle_event(self, event: pygame.event.Event) -> bool:
-        if event.type == pygame.MOUSEBUTTONDOWN:
+        if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:  # 只处理左键点击
             return self._handle_mouse_down(event)
-        elif event.type == pygame.MOUSEBUTTONUP:
-            return self._handle_mouse_up(event)
         return False
     
     def _handle_mouse_down(self, event: pygame.event.Event) -> bool:
@@ -59,25 +57,21 @@ class ChordGridEditor:
             self.show_options = False
             return False
         
+        # 检查是否点击了选项面板
+        if self.show_options and self.option_panel_rect and self.option_panel_rect.collidepoint(event.pos):
+            for i, rect in enumerate(self.option_rects):
+                if rect.collidepoint(event.pos):
+                    selected_option = self.option_items[i]
+                    self._apply_option_change(selected_option)
+                    self.show_options = False
+                    return True
+        
+        # 检查是否点击了和弦单元格
         for i, chord in enumerate(self.progression):
             cell_rect = self._get_cell_rect(i)
             if cell_rect.collidepoint(event.pos):
                 self.selected_chord_idx = i
                 self._show_chord_options(i, event.pos)
-                return True
-        
-        self.show_options = False
-        return False
-    
-    def _handle_mouse_up(self, event: pygame.event.Event) -> bool:
-        if not self.show_options or not self.option_rects:
-            return False
-        
-        for i, rect in enumerate(self.option_rects):
-            if rect.collidepoint(event.pos):
-                selected_option = self.option_items[i]
-                self._apply_option_change(selected_option)
-                self.show_options = False
                 return True
         
         self.show_options = False
