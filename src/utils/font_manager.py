@@ -1,5 +1,6 @@
 import pygame
 import logging
+from typing import Dict
 
 logger = logging.getLogger(__name__)
 
@@ -13,21 +14,36 @@ class FontManager:
         return cls._instance
     
     def _init_fonts(self):
-        try:
-            self.font = pygame.font.SysFont('SimHei', 24)
-            self.small_font = pygame.font.SysFont('SimHei', 20)
-            self.tiny_font = pygame.font.SysFont('SimHei', 16)
-        except:
-            self.font = pygame.font.SysFont(None, 24)
-            self.small_font = pygame.font.SysFont(None, 20)
-            self.tiny_font = pygame.font.SysFont(None, 16)
-            logger.warning("无法加载中文字体，将使用默认字体")
+        """Initialize fonts with Chinese support"""
+        self.fonts: Dict[int, pygame.font.Font] = {}
+        font_names = [
+            'Microsoft YaHei',
+            'SimHei',
+            'PingFang SC',
+            'STHeiti',
+            'WenQuanYi Zen Hei',
+            'Noto Sans CJK SC'
+        ]
+        
+        for size in [16, 18, 20, 24, 28]:
+            loaded = False
+            for name in font_names:
+                try:
+                    font = pygame.font.SysFont(name, size)
+                    # Test Chinese character rendering
+                    test_surf = font.render("测试", True, (255,255,255))
+                    if test_surf.get_width() > 0:
+                        self.fonts[size] = font
+                        loaded = True
+                        break
+                except Exception as e:
+                    logger.debug(f"Font {name} not available: {str(e)}")
+                    continue
+            
+            if not loaded:
+                self.fonts[size] = pygame.font.SysFont(None, size)
+                logger.warning(f"Chinese font not found for size {size}, using default")
     
-    def get_font(self, size=24):
-        if size == 24:
-            return self.font
-        elif size == 20:
-            return self.small_font
-        elif size == 16:
-            return self.tiny_font
-        return pygame.font.SysFont(None, size)
+    def get_font(self, size: int) -> pygame.font.Font:
+        """Get font with specified size"""
+        return self.fonts.get(size, pygame.font.SysFont(None, size))

@@ -62,7 +62,8 @@ class ChordPreview:
         pygame.draw.rect(surface, (60, 60, 80), self.rect)
         
         # 显示和弦名称
-        text = self.font_manager.get_font(28).render(self.chord_name, True, (255, 255, 255))
+        font = self.font_manager.get_font(28)
+        text = font.render(self.chord_name, True, (255, 255, 255))
         surface.blit(text, (self.rect.x + 20, self.rect.y + 20))
         
         # 显示音符名称
@@ -74,5 +75,6 @@ class ChordPreview:
             note_labels.append(f"{name}{octave}")
         
         notes_text = ", ".join(note_labels)
-        text = self.font_manager.get_font(20).render(notes_text, True, (200, 200, 230))
+        font = self.font_manager.get_font(20)
+        text = font.render(notes_text, True, (200, 200, 230))
         surface.blit(text, (self.rect.x + 20, self.rect.y + 60))

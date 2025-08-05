@@ -8,6 +8,7 @@ from grid_editor import ChordGridEditor
 from skin_manager import SkinManager
 from utils.debug_tools import DebugTools
 from custom_types import ChordConfig
+from style_selector import StyleSelector
 
 # 配置日志
 logging.basicConfig(
@@ -75,7 +76,7 @@ class ChordGeneratorApp:
         
         pygame.init()
         os.environ['SDL_VIDEO_CENTERED'] = '1'
-        self.screen = pygame.display.set_mode((1000, 700))
+        self.screen = pygame.display.set_mode((1100, 700))  # 宽度增加100px
         pygame.display.set_caption("MIDI和弦生成器")
         
         DebugTools.log_keyboard_mapping()
@@ -90,9 +91,10 @@ class ChordGeneratorApp:
         # UI区域定义
         self.ui_areas = {
             'control_panel': pygame.Rect(20, 20, 300, 660),
-            'piano_roll': pygame.Rect(340, 20, 640, 180),
-            'chord_preview': pygame.Rect(340, 220, 640, 120),
-            'progression_grid': pygame.Rect(340, 360, 640, 320)
+            'piano_roll': pygame.Rect(340, 20, 540, 180),  # 宽度减小
+            'chord_preview': pygame.Rect(340, 220, 540, 120),  # 宽度减小
+            'progression_grid': pygame.Rect(340, 360, 540, 320),  # 宽度减小
+            'style_selector': pygame.Rect(900, 20, 180, 660)  # 新增右侧区域
         }
         
         self.skin_manager = SkinManager()
@@ -211,6 +213,7 @@ class ChordGeneratorApp:
         self.piano_visualizer = PianoRoll(self.ui_areas['piano_roll'])
         self.chord_display = ChordPreview(self.ui_areas['chord_preview'])
         self.grid_editor = ChordGridEditor(self.ui_areas['progression_grid'])
+        self.style_selector = StyleSelector(self.ui_areas['style_selector'])
 
     def load_current_progression(self):
         """加载当前和弦进行"""
@@ -259,6 +262,14 @@ class ChordGeneratorApp:
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
                 return False
+                
+            # 处理风格选择器事件
+            if self.style_selector.handle_event(event):
+                # 当风格或进行改变时，更新当前进行
+                self.current_style = self.style_selector.selected_style
+                self.current_progression = self.style_selector.selected_progression
+                self.load_current_progression()
+                return True
                 
             if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
                 if self.buttons['export'].handle_event(event):
@@ -319,6 +330,9 @@ class ChordGeneratorApp:
         self.piano_visualizer.draw(self.screen)
         self.chord_display.draw(self.screen)
         self.grid_editor.draw(self.screen)
+        
+        # 绘制风格选择器
+        self.style_selector.draw(self.screen)
         
         # 绘制按钮
         for button in self.buttons.values():
