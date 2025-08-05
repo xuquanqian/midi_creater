@@ -1,6 +1,7 @@
 import pygame
 import os
 import logging
+import tempfile
 from typing import Dict, List
 from chord_generator import CHORD_DB, generate_progression_midi, chord_to_notes
 from visualizer import PianoRoll, ChordPreview
@@ -20,6 +21,49 @@ logging.basicConfig(
     ]
 )
 logger = logging.getLogger(__name__)
+
+class MidiPlayer:
+    def __init__(self):
+        self.is_playing = False
+        self.current_midi_file = None
+        pygame.mixer.init()
+    
+    def set_midi_file(self, midi_path):
+        self.current_midi_file = midi_path
+        try:
+            pygame.mixer.music.load(midi_path)
+        except pygame.error as e:
+            logger.error(f"加载MIDI文件失败: {str(e)}")
+    
+    def play(self):
+        if self.current_midi_file:
+            try:
+                pygame.mixer.music.play()
+                self.is_playing = True
+            except pygame.error as e:
+                logger.error(f"播放MIDI失败: {str(e)}")
+                self.is_playing = False
+    
+    def stop(self):
+        pygame.mixer.music.stop()
+        self.is_playing = False
+    
+    def save_midi(self, midi):
+        """保存MIDI到临时文件并返回路径"""
+        try:
+            temp_path = tempfile.mktemp(suffix='.mid')
+            midi.save(temp_path)
+            return temp_path
+        except Exception as e:
+            logger.error(f"保存MIDI文件失败: {str(e)}")
+            return None
+    
+    def handle_event(self, event):
+        """处理MIDI播放相关事件"""
+        if event.type == pygame.USEREVENT and event.code == 'MIDI_END':
+            self.is_playing = False
+            return True
+        return False
 
 class Button:
     def __init__(self, rect: pygame.Rect, text: str, color: tuple, hover_color: tuple, font_size=20):
@@ -74,9 +118,11 @@ class ChordGeneratorApp:
     def __init__(self):
         logger.info("=== 应用程序初始化开始 ===")
         
+        self.midi_player = MidiPlayer()
+        
         pygame.init()
         os.environ['SDL_VIDEO_CENTERED'] = '1'
-        self.screen = pygame.display.set_mode((1100, 700))  # 宽度增加100px
+        self.screen = pygame.display.set_mode((1100, 700), pygame.RESIZABLE)
         pygame.display.set_caption("MIDI和弦生成器")
         
         DebugTools.log_keyboard_mapping()
@@ -87,25 +133,59 @@ class ChordGeneratorApp:
         self.bpm = 120
         self.chord_style = "block"
         self.default_duration = 1.0
+        self.is_maximized = False
         
-        # UI区域定义
-        self.ui_areas = {
-            'control_panel': pygame.Rect(20, 20, 300, 660),
-            'piano_roll': pygame.Rect(340, 20, 540, 180),  # 宽度减小
-            'chord_preview': pygame.Rect(340, 220, 540, 120),  # 宽度减小
-            'progression_grid': pygame.Rect(340, 360, 540, 320),  # 宽度减小
-            'style_selector': pygame.Rect(900, 20, 180, 660)  # 新增右侧区域
-        }
+        # 初始化UI区域和组件
+        self._init_ui_layout()
         
         self.skin_manager = SkinManager()
         self._init_fonts()
         self._init_ui_elements()
-        self._init_components()
         
         self.progression: List[ChordConfig] = []
         self.selected_chord_idx = 0
         self.load_current_progression()
         logger.info("=== 应用程序初始化完成 ===")
+    
+    def _init_ui_layout(self):
+        """初始化UI布局"""
+        self._init_ui_areas()
+        self._init_components()
+    
+    def _init_ui_areas(self):
+        """初始化UI区域"""
+        width, height = self.screen.get_size()
+        
+        # 控制面板保持固定宽度300px，高度自适应
+        control_width = 300
+        control_height = height - 40
+        
+        # 右侧风格选择器保持固定宽度180px
+        style_width = 180
+        
+        # 主内容区域宽度自适应
+        content_width = width - control_width - style_width - 60  # 60是边距
+        
+        self.ui_areas = {
+            'control_panel': pygame.Rect(20, 20, control_width, control_height),
+            'piano_roll': pygame.Rect(control_width + 40, 20, content_width, 180),
+            'chord_preview': pygame.Rect(control_width + 40, 220, content_width, 120),
+            'progression_grid': pygame.Rect(control_width + 40, 360, content_width, control_height - 360),
+            'style_selector': pygame.Rect(width - style_width - 20, 20, style_width, control_height)
+        }
+    
+    def _init_components(self):
+        """初始化所有UI组件"""
+        self.piano_visualizer = PianoRoll(self.ui_areas['piano_roll'])
+        self.chord_display = ChordPreview(self.ui_areas['chord_preview'])
+        self.grid_editor = ChordGridEditor(self.ui_areas['progression_grid'])
+        self.style_selector = StyleSelector(self.ui_areas['style_selector'])
+        
+        # 确保组件有正确的和弦数据
+        if hasattr(self, 'progression'):
+            self.grid_editor.set_progression(self.progression)
+        if hasattr(self, 'selected_chord_idx'):
+            self.update_chord_display()
     
     def _init_fonts(self):
         """初始化所有字体"""
@@ -135,9 +215,8 @@ class ChordGeneratorApp:
         """初始化所有UI元素"""
         control_x = self.ui_areas['control_panel'].x + 20
         control_y = self.ui_areas['control_panel'].y + 20
-        button_width = 260
+        button_width = self.ui_areas['control_panel'].width - 40
         
-        # 重新设计间距和对齐
         self.control_elements = {
             'title': (control_x, control_y),
             'bpm_label': (control_x, control_y + 60),
@@ -153,7 +232,8 @@ class ChordGeneratorApp:
             'style_toggle': (control_x, control_y + 180),
             'play': (control_x, control_y + 240),
             'stop': (control_x, control_y + 300),
-            'export': (control_x, control_y + 520)
+            'export': (control_x, control_y + 520),
+            'maximize': (control_x, control_y + 580)
         }
         
         self.buttons = {
@@ -205,30 +285,56 @@ class ChordGeneratorApp:
                 "停止", 
                 (160, 80, 80), 
                 (180, 100, 100)
+            ),
+            'maximize': Button(
+                pygame.Rect(*self.control_elements['maximize'], button_width, 40),
+                "最大化" if not self.is_maximized else "恢复窗口", 
+                (120, 80, 160), 
+                (140, 100, 180)
             )
         }
-    
-    def _init_components(self):
-        """初始化组件"""
-        self.piano_visualizer = PianoRoll(self.ui_areas['piano_roll'])
-        self.chord_display = ChordPreview(self.ui_areas['chord_preview'])
-        self.grid_editor = ChordGridEditor(self.ui_areas['progression_grid'])
-        self.style_selector = StyleSelector(self.ui_areas['style_selector'])
 
+    def toggle_maximize(self):
+        """切换最大化状态"""
+        if not self.is_maximized:
+            display_info = pygame.display.Info()
+            self.screen = pygame.display.set_mode((display_info.current_w, display_info.current_h), pygame.FULLSCREEN)
+            self.is_maximized = True
+        else:
+            self.screen = pygame.display.set_mode((1100, 700), pygame.RESIZABLE)
+            self.is_maximized = False
+        
+        # 更新UI布局
+        self._update_ui_layout()
+        self.buttons['maximize'].text = "最大化" if not self.is_maximized else "恢复窗口"
+    
+    def _update_ui_layout(self):
+        """更新UI布局"""
+        self._init_ui_areas()
+        self._init_components()
+        self._init_ui_elements()
+    
     def load_current_progression(self):
         """加载当前和弦进行"""
         progression_data = CHORD_DB[self.current_style][self.current_progression]
         self.progression = []
-        
+    
         for roman in progression_data:
-            chord_type = "maj" if roman.isupper() else "min"
+            # 检查是否有(min)后缀
+            is_minor = "(min)" in roman.upper()
+            clean_roman = roman.upper().replace("(MIN)", "")
+        
+            # 获取默认和弦类型（如果是I-IV-V用maj，ii-iii-vi用min）
+            default_type = "min" if clean_roman in ["II", "III", "VI"] else "maj"
+            chord_type = "min" if is_minor else default_type
+        
             self.progression.append({
-                "roman": roman.upper(),
+                "roman": clean_roman,
                 "type": chord_type,
                 "inversion": 0,
                 "duration": self.default_duration
             })
-        
+    
         self.grid_editor.set_progression(self.progression)
         self.update_chord_display()
 
@@ -263,9 +369,12 @@ class ChordGeneratorApp:
             if event.type == pygame.QUIT:
                 return False
                 
-            # 处理风格选择器事件
+            if event.type == pygame.VIDEORESIZE and not self.is_maximized:
+                self.screen = pygame.display.set_mode((event.w, event.h), pygame.RESIZABLE)
+                self._update_ui_layout()
+                return True
+                
             if self.style_selector.handle_event(event):
-                # 当风格或进行改变时，更新当前进行
                 self.current_style = self.style_selector.selected_style
                 self.current_progression = self.style_selector.selected_progression
                 self.load_current_progression()
@@ -292,8 +401,26 @@ class ChordGeneratorApp:
                     self.buttons['style_toggle'].text = "切换为分解和弦" if self.chord_style == "block" else "切换为柱式和弦"
                     return True
                 elif self.buttons['play'].handle_event(event):
+                    # 生成并播放MIDI
+                    try:
+                        midi = generate_progression_midi(
+                            progression=self.progression,
+                            key=self.key,
+                            bpm=self.bpm,
+                            style=self.chord_style
+                        )
+                        midi_path = self.midi_player.save_midi(midi)
+                        if midi_path:
+                            self.midi_player.set_midi_file(midi_path)
+                            self.midi_player.play()
+                    except Exception as e:
+                        logger.error(f"播放失败: {str(e)}")
                     return True
                 elif self.buttons['stop'].handle_event(event):
+                    self.midi_player.stop()
+                    return True
+                elif self.buttons['maximize'].handle_event(event):
+                    self.toggle_maximize()
                     return True
             
             grid_handled = self.grid_editor.handle_event(event)
@@ -302,6 +429,12 @@ class ChordGeneratorApp:
                 self.update_chord_display()
                 return True
         
+        # 处理MIDI播放事件 - 单独处理USEREVENT事件
+        midi_events = [e for e in pygame.event.get(pygame.USEREVENT)]
+        for event in midi_events:
+            if self.midi_player.handle_event(event):
+                return True
+            
         return True
 
     def export_midi(self):
@@ -313,7 +446,19 @@ class ChordGeneratorApp:
                 bpm=self.bpm,
                 style=self.chord_style
             )
-            midi.save("chord_progression.mid")
+            # 让用户选择保存位置
+            import tkinter as tk
+            from tkinter import filedialog
+            root = tk.Tk()
+            root.withdraw()
+            file_path = filedialog.asksaveasfilename(
+                defaultextension=".mid",
+                filetypes=[("MIDI files", "*.mid"), ("All files", "*.*")],
+                title="保存MIDI文件"
+            )
+            if file_path:
+                midi.save(file_path)
+                logger.info(f"MIDI文件已保存到: {file_path}")
         except Exception as e:
             logger.error(f"导出失败: {str(e)}")
 
@@ -330,30 +475,30 @@ class ChordGeneratorApp:
         self.piano_visualizer.draw(self.screen)
         self.chord_display.draw(self.screen)
         self.grid_editor.draw(self.screen)
-        
-        # 绘制风格选择器
         self.style_selector.draw(self.screen)
         
         # 绘制按钮
         for button in self.buttons.values():
             button.draw(self.screen)
+            
+        # 更新播放按钮颜色
+        play_color = (120, 180, 100) if self.midi_player.is_playing else (90, 160, 70)
+        self.buttons['play'].color = play_color
+        self.buttons['play'].hover_color = (play_color[0]+20, play_color[1]+20, play_color[2]+20)
         
-        # 绘制控制参数 - 确保对齐
-        # BPM控制区域
+        # 绘制控制参数
         bpm_text = self.ui_font.render("速度 (BPM):", True, (220, 220, 240))
         self.screen.blit(bpm_text, self.control_elements['bpm_label'])
         
         bpm_value = self.ui_font.render(f"{self.bpm:>3}", True, (255, 255, 255))
         self.screen.blit(bpm_value, self.control_elements['bpm_value'])
         
-        # 时值控制区域
         duration_text = self.ui_font.render("时值 (小节):", True, (220, 220, 240))
         self.screen.blit(duration_text, self.control_elements['duration_label'])
         
         duration_value = self.ui_font.render(f"{abs(self.default_duration):.2f}", True, (255, 255, 255))
         self.screen.blit(duration_value, self.control_elements['duration_value'])
         
-        # 当前风格显示
         style_text = self.ui_font.render("当前风格:", True, (220, 220, 240))
         self.screen.blit(style_text, self.control_elements['style_label'])
         

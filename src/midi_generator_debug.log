@@ -1,9 +1,10 @@
-2025-08-06 01:01:34,274 - __main__ - INFO - === 应用程序初始化开始 ===
-2025-08-06 01:01:34,383 - utils.debug_tools - DEBUG - 键盘映射测试:
-2025-08-06 01:01:34,383 - utils.debug_tools - DEBUG - 标准E键码(pygame.K_e): 101
-2025-08-06 01:01:34,383 - utils.debug_tools - DEBUG - E键名称: e
-2025-08-06 01:01:34,383 - utils.debug_tools - DEBUG - 键码 97 对应名称: a
-2025-08-06 01:01:34,383 - utils.debug_tools - DEBUG - 键码 115 对应名称: s
-2025-08-06 01:01:34,383 - utils.debug_tools - DEBUG - 键码 100 对应名称: d
-2025-08-06 01:01:34,383 - utils.debug_tools - DEBUG - 键码 13 对应名称: return
-2025-08-06 01:01:34,396 - __main__ - INFO - === 应用程序初始化完成 ===
+2025-08-06 02:55:00,395 - __main__ - INFO - === 应用程序初始化开始 ===
+2025-08-06 02:55:00,497 - utils.debug_tools - DEBUG - 键盘映射测试:
+2025-08-06 02:55:00,497 - utils.debug_tools - DEBUG - 标准E键码(pygame.K_e): 101
+2025-08-06 02:55:00,497 - utils.debug_tools - DEBUG - E键名称: e
+2025-08-06 02:55:00,497 - utils.debug_tools - DEBUG - 键码 97 对应名称: a
+2025-08-06 02:55:00,497 - utils.debug_tools - DEBUG - 键码 115 对应名称: s
+2025-08-06 02:55:00,497 - utils.debug_tools - DEBUG - 键码 100 对应名称: d
+2025-08-06 02:55:00,497 - utils.debug_tools - DEBUG - 键码 13 对应名称: return
+2025-08-06 02:55:00,512 - __main__ - INFO - === 应用程序初始化完成 ===
+2025-08-06 02:55:12,580 - __main__ - INFO - MIDI文件已保存到: D:/midi生成器/src/midi生成器/output/1.mid

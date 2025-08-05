@@ -25,6 +25,19 @@ class ChordGridEditor:
         self.cell_padding = 10
         self.cell_spacing = 5
         
+        # Scroll parameters (modified for horizontal scroll at bottom)
+        self.scroll_offset = 0
+        self.scroll_bar_height = 12
+        self.scroll_bar_dragging = False
+        self.scroll_bar_rect = pygame.Rect(
+            self.rect.left + 2,
+            self.rect.bottom - self.scroll_bar_height - 2,
+            self.rect.width - 4,
+            self.scroll_bar_height
+        )
+        self.scroll_thumb_rect = None
+        self._update_scroll_thumb()
+        
         # UI state
         self.active_control = None
         self.show_options = False
@@ -40,10 +53,31 @@ class ChordGridEditor:
             'highlight': (150, 200, 250),
             'text': (255, 255, 255),
             'option_panel': (50, 50, 70),
-            'border': (30, 30, 30)
+            'border': (30, 30, 30),
+            'scroll_bar': (100, 100, 120),
+            'scroll_thumb': (150, 150, 170)
         }
         
         self.font_manager = FontManager()
+
+    def _update_scroll_thumb(self):
+        """Update scroll thumb position and size (modified for horizontal scroll)"""
+        content_width = max(len(self.progression) * self.cell_width, self.rect.width)
+        visible_ratio = self.rect.width / content_width
+        thumb_width = max(30, int(self.scroll_bar_rect.width * visible_ratio))
+        
+        scroll_range = content_width - self.rect.width
+        if scroll_range <= 0:
+            thumb_pos = 0
+        else:
+            thumb_pos = (self.scroll_offset / scroll_range) * (self.scroll_bar_rect.width - thumb_width)
+        
+        self.scroll_thumb_rect = pygame.Rect(
+            self.scroll_bar_rect.left + thumb_pos,
+            self.scroll_bar_rect.top,
+            thumb_width,
+            self.scroll_bar_rect.height
+        )
 
     def set_progression(self, progression: List[ChordConfig]):
         """Set the chord progression"""
@@ -52,6 +86,7 @@ class ChordGridEditor:
             self.selected_chord_idx = 0
         else:
             self.selected_chord_idx = max(0, min(self.selected_chord_idx, len(self.progression) - 1))
+        self._update_scroll_thumb()
 
     def handle_event(self, event: pygame.event.Event) -> bool:
         """Handle input events"""
@@ -60,6 +95,21 @@ class ChordGridEditor:
             if not self.rect.collidepoint(mouse_pos):
                 self.show_options = False
                 return False
+                
+            # Check scroll bar drag
+            if self.scroll_thumb_rect and self.scroll_thumb_rect.collidepoint(mouse_pos):
+                self.scroll_bar_dragging = True
+                return True
+                
+            if self.scroll_bar_rect.collidepoint(mouse_pos):
+                # Click on scroll bar but not thumb
+                if mouse_pos[0] < self.scroll_thumb_rect.left:
+                    self.scroll_offset = max(0, self.scroll_offset - self.rect.width)
+                else:
+                    max_offset = max(0, len(self.progression) * self.cell_width - self.rect.width)
+                    self.scroll_offset = min(max_offset, self.scroll_offset + self.rect.width)
+                self._update_scroll_thumb()
+                return True
                 
             if self.show_options and self.option_panel_rect and self.option_panel_rect.collidepoint(mouse_pos):
                 for i, rect in enumerate(self.option_rects):
@@ -76,19 +126,52 @@ class ChordGridEditor:
                     return True
                     
             self.show_options = False
+            
+        elif event.type == pygame.MOUSEBUTTONUP and event.button == 1:
+            self.scroll_bar_dragging = False
+            
+        elif event.type == pygame.MOUSEMOTION and self.scroll_bar_dragging:
+            # Handle scroll bar dragging (modified for horizontal scroll)
+            mouse_x = event.pos[0]
+            scroll_bar_left = self.scroll_bar_rect.left
+            scroll_bar_right = self.scroll_bar_rect.right
+            
+            # Calculate new thumb position
+            thumb_width = self.scroll_thumb_rect.width
+            new_thumb_left = max(scroll_bar_left, min(mouse_x - thumb_width/2, scroll_bar_right - thumb_width))
+            
+            # Calculate new scroll offset
+            scroll_range = max(1, len(self.progression) * self.cell_width - self.rect.width)
+            thumb_range = self.scroll_bar_rect.width - thumb_width
+            if thumb_range > 0:
+                self.scroll_offset = ((new_thumb_left - scroll_bar_left) / thumb_range) * scroll_range
+                self.scroll_offset = max(0, min(self.scroll_offset, scroll_range))
+                self._update_scroll_thumb()
+            return True
+            
+        elif event.type == pygame.MOUSEWHEEL:
+            # Handle mouse wheel scrolling
+            max_offset = max(0, len(self.progression) * self.cell_width - self.rect.width)
+            self.scroll_offset = max(0, min(max_offset, self.scroll_offset - event.y * 30))
+            self._update_scroll_thumb()
+            return True
+            
         return False
 
     def _get_cell_rect(self, index: int) -> pygame.Rect:
-        """Get rectangle for cell at given index"""
-        max_cells = self.rect.width // self.cell_width
-        if index >= max_cells:
+        """Get rectangle for cell at given index (modified for bottom scroll bar)"""
+        cell_x = self.rect.x + index * self.cell_width + self.cell_padding - self.scroll_offset
+        cell_y = self.rect.y + self.cell_padding
+        
+        # Check if cell is visible
+        if cell_x + self.cell_width < self.rect.left or cell_x > self.rect.right:
             return pygame.Rect(0, 0, 0, 0)
             
         return pygame.Rect(
-            self.rect.x + index * self.cell_width + self.cell_padding,
-            self.rect.y + self.cell_padding,
+            cell_x,
+            cell_y,
             self.cell_width - 2 * self.cell_padding,
-            self.rect.height - 2 * self.cell_padding
+            self.rect.height - 2 * self.cell_padding - self.scroll_bar_height  # Account for scroll bar height
         )
 
     def _show_chord_options(self, chord_idx: int, pos: Tuple[int, int]):
@@ -118,7 +201,7 @@ class ChordGridEditor:
         item_height = 30
         panel_height = min(300, len(self.option_items) * item_height + 20)
         panel_x = min(pos[0], self.rect.right - panel_width)
-        panel_y = min(pos[1], self.rect.bottom - panel_height)
+        panel_y = min(pos[1], self.rect.bottom - panel_height - self.scroll_bar_height)  # Account for scroll bar
         
         self.option_panel_rect = pygame.Rect(panel_x, panel_y, panel_width, panel_height)
         
@@ -151,7 +234,15 @@ class ChordGridEditor:
             chord['inversion'] = int(value)
 
     def draw(self, surface: pygame.Surface):
-        """Draw the grid editor"""
+        """Draw the grid editor (modified for bottom scroll bar)"""
+        # Draw background with clipping (account for scroll bar)
+        clip_rect = pygame.Rect(
+            self.rect.x, self.rect.y,
+            self.rect.width, self.rect.height - self.scroll_bar_height
+        )
+        old_clip = surface.get_clip()
+        surface.set_clip(clip_rect)
+        
         pygame.draw.rect(surface, self.colors['background'], self.rect, border_radius=8)
         
         # Draw chord cells
@@ -185,6 +276,28 @@ class ChordGridEditor:
             dur_rect = dur_surf.get_rect(center=(cell_rect.centerx, cell_rect.centery + 25))
             surface.blit(dur_surf, dur_rect)
         
+        # Reset clipping
+        surface.set_clip(old_clip)
+        
+        # Draw scroll bar if needed
+        if len(self.progression) * self.cell_width > self.rect.width:
+            # Draw scroll bar track
+            pygame.draw.rect(
+                surface, 
+                self.colors['scroll_bar'], 
+                self.scroll_bar_rect, 
+                border_radius=self.scroll_bar_height//2
+            )
+            
+            # Draw scroll thumb
+            if self.scroll_thumb_rect:
+                pygame.draw.rect(
+                    surface,
+                    self.colors['scroll_thumb'],
+                    self.scroll_thumb_rect,
+                    border_radius=self.scroll_bar_height//2
+                )
+        
         # Draw options panel if visible
         if self.show_options and self.option_items:
             self._draw_option_panel(surface)
@@ -202,7 +315,7 @@ class ChordGridEditor:
             if rect.collidepoint(mouse_pos):
                 pygame.draw.rect(surface, self.colors['highlight'], rect, border_radius=4)
             else:
-                pygame.draw.rect(surface, self.colors['panel'], rect, border_radius=4)
+                pygame.draw.rect(surface, self.colors['option_panel'], rect, border_radius=4)
             
             pygame.draw.rect(surface, self.colors['border'], rect, 1, border_radius=4)
             
