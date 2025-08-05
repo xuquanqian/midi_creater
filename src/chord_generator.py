@@ -14,7 +14,8 @@ CHORD_DB = {
 
 SCALE_MAP = {
     'C': [0, 2, 4, 5, 7, 9, 11],  # C大调音阶
-    # 其他调性...
+    'F': [5, 7, 9, 10, 0, 2, 4],   # F大调音阶
+    'G': [7, 9, 11, 0, 2, 4, 6]    # G大调音阶
 }
 
 CHORD_TYPES = {
@@ -22,8 +23,41 @@ CHORD_TYPES = {
     'min': [0, 3, 7],        # 小三和弦
     '7': [0, 4, 7, 10],      # 属七和弦
     'maj7': [0, 4, 7, 11],   # 大七和弦
+    'sus4': [0, 5, 7],       # 挂四和弦
+    'm7': [0, 3, 7, 10],     # 小七和弦
     # 更多和弦类型...
 }
+
+NOTE_NAMES = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B']
+
+def get_note_name(note_value):
+    """获取音符名称"""
+    return NOTE_NAMES[note_value % 12]
+
+def chord_to_name(key, roman_numeral, chord_type):
+    """将罗马数字和弦转换为实际和弦名称"""
+    roman_numeral = roman_numeral.upper()
+    
+    scale_degrees = {'I': 0, 'II': 1, 'III': 2, 'IV': 3, 
+                    'V': 4, 'VI': 5, 'VII': 6}
+    
+    root_idx = scale_degrees[roman_numeral]
+    root_note = SCALE_MAP[key][root_idx]
+    
+    # 获取根音名称
+    root_name = get_note_name(root_note)
+    
+    # 构建和弦名称
+    type_map = {
+        'maj': '',
+        'min': 'm',
+        '7': '7',
+        'maj7': 'maj7',
+        'sus4': 'sus4',
+        'm7': 'm7'
+    }
+    
+    return f"{root_name}{type_map.get(chord_type, '')}"
 
 def chord_to_notes(key, roman_numeral, chord_type, inversion=0):
     """将罗马数字和弦转换为实际音符"""

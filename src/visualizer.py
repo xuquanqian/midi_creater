@@ -1,30 +1,30 @@
-# visualizer.py
 import pygame
-import numpy as np
-from chord_generator import chord_to_notes
+from typing import List
+from utils.font_manager import FontManager
 
 class PianoRoll:
-    def __init__(self, rect, start_note=36, end_note=84):
+    def __init__(self, rect: pygame.Rect, start_note: int = 36, end_note: int = 84):
         self.rect = rect
         self.start_note = start_note
         self.end_note = end_note
         self.visible_notes = end_note - start_note
         self.key_width = rect.width / self.visible_notes
+        self.chord_notes: List[int] = []
         
-        # 创建键盘映射
+        # 初始化音符颜色
         self.note_colors = {}
         for note in range(start_note, end_note):
-            # 白键和黑键的区分
             if note % 12 in [1, 3, 6, 8, 10]:
-                self.note_colors[note] = (50, 50, 50)  # 黑键
+                self.note_colors[note] = (50, 50, 50)
             else:
-                self.note_colors[note] = (220, 220, 220)  # 白键
+                self.note_colors[note] = (220, 220, 220)
+        
+        # 字体管理
+        self.font_manager = FontManager()
 
-    def draw(self, surface, chord_notes=[]):
-        # 绘制背景
+    def draw(self, surface: pygame.Surface):
         pygame.draw.rect(surface, (40, 40, 40), self.rect)
         
-        # 绘制琴键
         for i, note in enumerate(range(self.start_note, self.end_note)):
             rect = pygame.Rect(
                 self.rect.x + i * self.key_width,
@@ -33,39 +33,36 @@ class PianoRoll:
                 self.rect.height
             )
             
-            # 判断是否在当前和弦中
-            if note in chord_notes:
-                color = (255, 100, 100)  # 高亮显示和弦音符
+            if note in self.chord_notes:
+                color = (255, 100, 100)
             else:
                 color = self.note_colors[note]
                 
             pygame.draw.rect(surface, color, rect)
             pygame.draw.rect(surface, (30, 30, 30), rect, 1)
         
-        # 添加音符标签
-        font = pygame.font.SysFont(None, 16)
+        font = self.font_manager.get_font(16)
         for i, note in enumerate([48, 60, 72, 84]):
             text = font.render(f"C{note//12 - 1}", True, (200, 200, 200))
             pos_x = (note - self.start_note) * self.key_width
             surface.blit(text, (self.rect.x + pos_x + 5, self.rect.y + 10))
 
 class ChordPreview:
-    def __init__(self, rect):
+    def __init__(self, rect: pygame.Rect):
         self.rect = rect
         self.chord_name = ""
-        self.chord_notes = []
+        self.chord_notes: List[int] = []
+        self.font_manager = FontManager()
     
-    def update(self, chord_name, notes):
+    def update(self, chord_name: str, notes: List[int]):
         self.chord_name = chord_name
         self.chord_notes = notes
     
-    def draw(self, surface):
-        # 绘制背景
+    def draw(self, surface: pygame.Surface):
         pygame.draw.rect(surface, (60, 60, 80), self.rect)
         
         # 显示和弦名称
-        font = pygame.font.SysFont(None, 28)
-        text = font.render(self.chord_name, True, (255, 255, 255))
+        text = self.font_manager.get_font(28).render(self.chord_name, True, (255, 255, 255))
         surface.blit(text, (self.rect.x + 20, self.rect.y + 20))
         
         # 显示音符名称
@@ -77,6 +74,5 @@ class ChordPreview:
             note_labels.append(f"{name}{octave}")
         
         notes_text = ", ".join(note_labels)
-        font = pygame.font.SysFont(None, 22)
-        text = font.render(notes_text, True, (200, 200, 230))
+        text = self.font_manager.get_font(20).render(notes_text, True, (200, 200, 230))
         surface.blit(text, (self.rect.x + 20, self.rect.y + 60))
