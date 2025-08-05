@@ -8,8 +8,11 @@ from visualizer import PianoRoll, ChordPreview
 from grid_editor import ChordGridEditor
 from skin_manager import SkinManager
 from utils.debug_tools import DebugTools
-from custom_types import ChordConfig
+from custom_types import ChordConfig, SongSection, SectionType
 from style_selector import StyleSelector
+from song_structure.section_manager import SectionManager
+from song_structure.clipboard import ChordClipboard
+from song_structure.structure_editor import StructureEditor
 
 # 配置日志
 logging.basicConfig(
@@ -135,6 +138,11 @@ class ChordGeneratorApp:
         self.default_duration = 1.0
         self.is_maximized = False
         
+        # 新增段落管理相关初始化
+        self.section_manager = SectionManager()
+        self.clipboard = ChordClipboard()
+        self._init_default_sections()
+        
         # 初始化UI区域和组件
         self._init_ui_layout()
         
@@ -146,6 +154,12 @@ class ChordGeneratorApp:
         self.selected_chord_idx = 0
         self.load_current_progression()
         logger.info("=== 应用程序初始化完成 ===")
+    
+    def _init_default_sections(self):
+        """初始化默认段落"""
+        self.section_manager.add_section("主歌1", "verse", length=8, bpm=self.bpm)
+        self.section_manager.add_section("副歌1", "chorus", length=8, bpm=self.bpm)
+        self.section_manager.current_section = "主歌1"
     
     def _init_ui_layout(self):
         """初始化UI布局"""
@@ -171,7 +185,8 @@ class ChordGeneratorApp:
             'piano_roll': pygame.Rect(control_width + 40, 20, content_width, 180),
             'chord_preview': pygame.Rect(control_width + 40, 220, content_width, 120),
             'progression_grid': pygame.Rect(control_width + 40, 360, content_width, control_height - 360),
-            'style_selector': pygame.Rect(width - style_width - 20, 20, style_width, control_height)
+            'style_selector': pygame.Rect(width - style_width - 20, 20, style_width, control_height),
+            'structure_editor': pygame.Rect(20, height - 50, width - 40, 50)
         }
     
     def _init_components(self):
@@ -180,6 +195,7 @@ class ChordGeneratorApp:
         self.chord_display = ChordPreview(self.ui_areas['chord_preview'])
         self.grid_editor = ChordGridEditor(self.ui_areas['progression_grid'])
         self.style_selector = StyleSelector(self.ui_areas['style_selector'])
+        self.structure_editor = StructureEditor(self.ui_areas['structure_editor'], self.section_manager)
         
         # 确保组件有正确的和弦数据
         if hasattr(self, 'progression'):
@@ -335,6 +351,8 @@ class ChordGeneratorApp:
                 "duration": self.default_duration
             })
     
+        # 更新当前段落的和弦进行
+        self.section_manager.set_current_progression(self.progression)
         self.grid_editor.set_progression(self.progression)
         self.update_chord_display()
 
@@ -361,25 +379,33 @@ class ChordGeneratorApp:
     def handle_events(self) -> bool:
         """处理输入事件"""
         mouse_pos = pygame.mouse.get_pos()
-        
+    
         for button in self.buttons.values():
             button.check_hover(mouse_pos)
-        
+    
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
                 return False
-                
+            
             if event.type == pygame.VIDEORESIZE and not self.is_maximized:
                 self.screen = pygame.display.set_mode((event.w, event.h), pygame.RESIZABLE)
                 self._update_ui_layout()
                 return True
-                
+            
             if self.style_selector.handle_event(event):
                 self.current_style = self.style_selector.selected_style
                 self.current_progression = self.style_selector.selected_progression
                 self.load_current_progression()
                 return True
-                
+            
+            # 新增段落编辑器事件处理
+            if self.structure_editor.handle_event(event):
+                # 段落切换后更新当前和弦进行
+                self.progression = self.section_manager.get_current_progression()
+                self.grid_editor.set_progression(self.progression)
+                self.update_chord_display()
+                return True
+            
             if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
                 if self.buttons['export'].handle_event(event):
                     self.export_midi()
@@ -401,10 +427,10 @@ class ChordGeneratorApp:
                     self.buttons['style_toggle'].text = "切换为分解和弦" if self.chord_style == "block" else "切换为柱式和弦"
                     return True
                 elif self.buttons['play'].handle_event(event):
-                    # 生成并播放MIDI
+                    # 生成并播放MIDI (使用当前段落的和弦进行)
                     try:
                         midi = generate_progression_midi(
-                            progression=self.progression,
+                            progression=self.section_manager.get_current_progression(),
                             key=self.key,
                             bpm=self.bpm,
                             style=self.chord_style
@@ -422,13 +448,17 @@ class ChordGeneratorApp:
                 elif self.buttons['maximize'].handle_event(event):
                     self.toggle_maximize()
                     return True
-            
+        
             grid_handled = self.grid_editor.handle_event(event)
             if grid_handled:
+                # 更新当前段落的和弦进行
                 self.progression = self.grid_editor.progression
+                self.section_manager.set_current_progression(self.progression)
+                # 确保更新选中的和弦索引
+                self.selected_chord_idx = self.grid_editor.selected_chord_idx
                 self.update_chord_display()
                 return True
-        
+    
         # 处理MIDI播放事件 - 单独处理USEREVENT事件
         midi_events = [e for e in pygame.event.get(pygame.USEREVENT)]
         for event in midi_events:
@@ -476,6 +506,7 @@ class ChordGeneratorApp:
         self.chord_display.draw(self.screen)
         self.grid_editor.draw(self.screen)
         self.style_selector.draw(self.screen)
+        self.structure_editor.draw(self.screen)  # 新增段落编辑器绘制
         
         # 绘制按钮
         for button in self.buttons.values():

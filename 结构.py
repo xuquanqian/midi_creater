@@ -1,5 +1,10 @@
 midi_creater
 ├── src/                  # 源代码
+│   ├── song_structure/          # 新增目录
+│   │   ├── __init__.py
+│   │   ├── section_manager.py   # 段落管理核心逻辑
+│   │   ├── clipboard.py         # 剪贴板功能
+│   │   └── structure_editor.py  # 段落编辑器UI
 │   ├── main_app.py
 │   ├── chord_generator.py
 │   ├── visualizer.py
@@ -7,6 +12,8 @@ midi_creater
 │   ├── grid_editor.py
 │   ├── constants.py
 │   ├── custom_types.py
+│   ├── midi_player.py
+│   ├── style_selector.py
 │   └── utils
 │       ├──__init__.py
 │       ├── debug_tools.py

@@ -1,6 +1,6 @@
+from typing import List, Dict, Tuple, Optional
 import pygame
 import logging
-from typing import List, Dict, Tuple, Optional
 from constants import CHORD_TYPES, CHORD_TYPE_DISPLAY
 from custom_types import ChordConfig
 from utils.font_manager import FontManager
@@ -25,7 +25,7 @@ class ChordGridEditor:
         self.cell_padding = 10
         self.cell_spacing = 5
         
-        # Scroll parameters (modified for horizontal scroll at bottom)
+        # Scroll parameters
         self.scroll_offset = 0
         self.scroll_bar_height = 12
         self.scroll_bar_dragging = False
@@ -44,6 +44,12 @@ class ChordGridEditor:
         self.option_items: List[Tuple[str, str]] = []
         self.option_rects: List[pygame.Rect] = []
         self.option_panel_rect: Optional[pygame.Rect] = None
+        self.current_option_type = None
+        
+        # 新增选项面板滚动参数
+        self.option_scroll_offset = 0
+        self.option_scroll_dragging = False
+        self.option_scroll_thumb_rect = None
         
         # Colors
         self.colors = {
@@ -55,13 +61,15 @@ class ChordGridEditor:
             'option_panel': (50, 50, 70),
             'border': (30, 30, 30),
             'scroll_bar': (100, 100, 120),
-            'scroll_thumb': (150, 150, 170)
+            'scroll_thumb': (150, 150, 170),
+            'option_scroll_bar': (80, 80, 100),
+            'option_scroll_thumb': (120, 120, 140)
         }
         
         self.font_manager = FontManager()
 
     def _update_scroll_thumb(self):
-        """Update scroll thumb position and size (modified for horizontal scroll)"""
+        """Update scroll thumb position and size"""
         content_width = max(len(self.progression) * self.cell_width, self.rect.width)
         visible_ratio = self.rect.width / content_width
         thumb_width = max(30, int(self.scroll_bar_rect.width * visible_ratio))
@@ -79,6 +87,28 @@ class ChordGridEditor:
             self.scroll_bar_rect.height
         )
 
+    def _update_option_scroll_thumb(self):
+        """Update option panel scroll thumb position and size"""
+        if not self.option_panel_rect:
+            return
+            
+        total_height = len(self.option_items) * 35 + 20
+        visible_height = self.option_panel_rect.height
+        if total_height <= visible_height:
+            self.option_scroll_thumb_rect = None
+            return
+            
+        thumb_height = max(30, int(visible_height * (visible_height / total_height)))
+        scroll_range = total_height - visible_height
+        thumb_pos = (self.option_scroll_offset / scroll_range) * (visible_height - thumb_height)
+        
+        self.option_scroll_thumb_rect = pygame.Rect(
+            self.option_panel_rect.right - 8,
+            self.option_panel_rect.top + thumb_pos,
+            6,
+            thumb_height
+        )
+
     def set_progression(self, progression: List[ChordConfig]):
         """Set the chord progression"""
         self.progression = progression
@@ -90,6 +120,8 @@ class ChordGridEditor:
 
     def handle_event(self, event: pygame.event.Event) -> bool:
         """Handle input events"""
+        handled = False
+        
         if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
             mouse_pos = event.pos
             if not self.rect.collidepoint(mouse_pos):
@@ -112,54 +144,97 @@ class ChordGridEditor:
                 return True
                 
             if self.show_options and self.option_panel_rect and self.option_panel_rect.collidepoint(mouse_pos):
+                # 检查是否点击了选项面板的滚动条
+                if self.option_scroll_thumb_rect and self.option_scroll_thumb_rect.collidepoint(mouse_pos):
+                    self.option_scroll_dragging = True
+                    return True
+                    
+                # 检查是否点击了选项
                 for i, rect in enumerate(self.option_rects):
-                    if rect.collidepoint(mouse_pos):
+                    adjusted_rect = pygame.Rect(
+                        rect.x,
+                        rect.y - self.option_scroll_offset,
+                        rect.width,
+                        rect.height
+                    )
+                    if adjusted_rect.collidepoint(mouse_pos):
                         self._apply_option_change(self.option_items[i])
                         self.show_options = False
-                        return True
+                        handled = True
+                        break
                 
             for i, chord in enumerate(self.progression):
                 cell_rect = self._get_cell_rect(i)
                 if cell_rect.collidepoint(mouse_pos):
                     self.selected_chord_idx = i
+                    handled = True
                     self._show_chord_options(i, mouse_pos)
-                    return True
+                    break
                     
             self.show_options = False
             
         elif event.type == pygame.MOUSEBUTTONUP and event.button == 1:
             self.scroll_bar_dragging = False
+            self.option_scroll_dragging = False
             
-        elif event.type == pygame.MOUSEMOTION and self.scroll_bar_dragging:
-            # Handle scroll bar dragging (modified for horizontal scroll)
-            mouse_x = event.pos[0]
-            scroll_bar_left = self.scroll_bar_rect.left
-            scroll_bar_right = self.scroll_bar_rect.right
-            
-            # Calculate new thumb position
-            thumb_width = self.scroll_thumb_rect.width
-            new_thumb_left = max(scroll_bar_left, min(mouse_x - thumb_width/2, scroll_bar_right - thumb_width))
-            
-            # Calculate new scroll offset
-            scroll_range = max(1, len(self.progression) * self.cell_width - self.rect.width)
-            thumb_range = self.scroll_bar_rect.width - thumb_width
-            if thumb_range > 0:
-                self.scroll_offset = ((new_thumb_left - scroll_bar_left) / thumb_range) * scroll_range
-                self.scroll_offset = max(0, min(self.scroll_offset, scroll_range))
-                self._update_scroll_thumb()
-            return True
-            
+        elif event.type == pygame.MOUSEMOTION:
+            # Handle scroll bar dragging
+            if self.scroll_bar_dragging:
+                mouse_x = event.pos[0]
+                scroll_bar_left = self.scroll_bar_rect.left
+                scroll_bar_right = self.scroll_bar_rect.right
+                
+                thumb_width = self.scroll_thumb_rect.width
+                new_thumb_left = max(scroll_bar_left, min(mouse_x - thumb_width/2, scroll_bar_right - thumb_width))
+                
+                scroll_range = max(1, len(self.progression) * self.cell_width - self.rect.width)
+                thumb_range = self.scroll_bar_rect.width - thumb_width
+                if thumb_range > 0:
+                    self.scroll_offset = ((new_thumb_left - scroll_bar_left) / thumb_range) * scroll_range
+                    self.scroll_offset = max(0, min(self.scroll_offset, scroll_range))
+                    self._update_scroll_thumb()
+                return True
+                
+            # Handle option panel scroll bar dragging
+            if self.option_scroll_dragging and self.option_panel_rect:
+                mouse_y = event.pos[1]
+                panel_top = self.option_panel_rect.top
+                panel_bottom = self.option_panel_rect.bottom
+                
+                thumb_height = self.option_scroll_thumb_rect.height
+                new_thumb_top = max(panel_top, min(mouse_y - thumb_height/2, panel_bottom - thumb_height))
+                
+                total_height = len(self.option_items) * 35 + 20
+                scroll_range = total_height - self.option_panel_rect.height
+                thumb_range = self.option_panel_rect.height - thumb_height
+                if thumb_range > 0:
+                    self.option_scroll_offset = ((new_thumb_top - panel_top) / thumb_range) * scroll_range
+                    self.option_scroll_offset = max(0, min(self.option_scroll_offset, scroll_range))
+                    self._update_option_scroll_thumb()
+                return True
+                
         elif event.type == pygame.MOUSEWHEEL:
-            # Handle mouse wheel scrolling
-            max_offset = max(0, len(self.progression) * self.cell_width - self.rect.width)
-            self.scroll_offset = max(0, min(max_offset, self.scroll_offset - event.y * 30))
-            self._update_scroll_thumb()
-            return True
+            # 获取当前鼠标位置
+            mouse_pos = pygame.mouse.get_pos()
             
-        return False
+            # Handle mouse wheel scrolling for main grid
+            if not self.show_options or not self.option_panel_rect or not self.option_panel_rect.collidepoint(mouse_pos):
+                max_offset = max(0, len(self.progression) * self.cell_width - self.rect.width)
+                self.scroll_offset = max(0, min(max_offset, self.scroll_offset - event.y * 30))
+                self._update_scroll_thumb()
+                return True
+            # Handle mouse wheel scrolling for option panel
+            elif self.show_options and self.option_panel_rect and self.option_panel_rect.collidepoint(mouse_pos):
+                total_height = len(self.option_items) * 35 + 20
+                max_offset = max(0, total_height - self.option_panel_rect.height)
+                self.option_scroll_offset = max(0, min(max_offset, self.option_scroll_offset - event.y * 20))
+                self._update_option_scroll_thumb()
+                return True
+            
+        return handled
 
     def _get_cell_rect(self, index: int) -> pygame.Rect:
-        """Get rectangle for cell at given index (modified for bottom scroll bar)"""
+        """Get rectangle for cell at given index"""
         cell_x = self.rect.x + index * self.cell_width + self.cell_padding - self.scroll_offset
         cell_y = self.rect.y + self.cell_padding
         
@@ -171,41 +246,51 @@ class ChordGridEditor:
             cell_x,
             cell_y,
             self.cell_width - 2 * self.cell_padding,
-            self.rect.height - 2 * self.cell_padding - self.scroll_bar_height  # Account for scroll bar height
+            self.rect.height - 2 * self.cell_padding - self.scroll_bar_height
         )
 
-    def _show_chord_options(self, chord_idx: int, pos: Tuple[int, int]):
+    def _show_chord_options(self, chord_idx: int, pos: Tuple[int, int], option_type: str = None):
         """Show options for chord at given index"""
         if not 0 <= chord_idx < len(self.progression):
             return
             
         self.selected_chord_idx = chord_idx
         chord = self.progression[chord_idx]
+        self.current_option_type = option_type
         
         self.option_items = []
         
-        # Add roman numeral options
+        # 添加罗马数字选项
         for roman in self.ROMAN_NUMERALS:
             self.option_items.append(('roman', roman))
             
-        # Add chord type options
+        # 添加和弦类型选项
         for ctype in self.CHORD_TYPES:
             self.option_items.append(('type', ctype))
             
-        # Add inversion options
+        # 添加转位选项
         for inv in self.INVERSIONS:
             self.option_items.append(('inversion', str(inv)))
         
         # Calculate panel size and position
         panel_width = 180
         item_height = 30
-        panel_height = min(300, len(self.option_items) * item_height + 20)
+        max_panel_height = self.rect.height - 50
+        panel_height = min(max_panel_height, 300)  # 限制面板最大高度
+        
+        # 调整面板位置，确保不会超出边界
         panel_x = min(pos[0], self.rect.right - panel_width)
-        panel_y = min(pos[1], self.rect.bottom - panel_height - self.scroll_bar_height)  # Account for scroll bar
+        panel_y = min(pos[1], self.rect.bottom - panel_height - self.scroll_bar_height)
+        
+        # 如果下方空间不足，尝试向上展开
+        if panel_y + panel_height > self.rect.bottom - self.scroll_bar_height:
+            panel_y = max(self.rect.y, pos[1] - panel_height)
         
         self.option_panel_rect = pygame.Rect(panel_x, panel_y, panel_width, panel_height)
+        self.option_scroll_offset = 0
+        self._update_option_scroll_thumb()
         
-        # Create option rectangles
+        # Create option rectangles (不考虑滚动偏移，将在绘制时处理)
         self.option_rects = []
         for i, item in enumerate(self.option_items):
             rect = pygame.Rect(
@@ -234,8 +319,8 @@ class ChordGridEditor:
             chord['inversion'] = int(value)
 
     def draw(self, surface: pygame.Surface):
-        """Draw the grid editor (modified for bottom scroll bar)"""
-        # Draw background with clipping (account for scroll bar)
+        """Draw the grid editor"""
+        # Draw background with clipping
         clip_rect = pygame.Rect(
             self.rect.x, self.rect.y,
             self.rect.width, self.rect.height - self.scroll_bar_height
@@ -248,7 +333,7 @@ class ChordGridEditor:
         # Draw chord cells
         for i, chord in enumerate(self.progression):
             cell_rect = self._get_cell_rect(i)
-            if cell_rect.width == 0:  # Skip if outside visible area
+            if cell_rect.width == 0:
                 continue
                 
             # Draw cell background
@@ -275,13 +360,32 @@ class ChordGridEditor:
             dur_surf = font.render(duration_text, True, self.colors['text'])
             dur_rect = dur_surf.get_rect(center=(cell_rect.centerx, cell_rect.centery + 25))
             surface.blit(dur_surf, dur_rect)
+            
+            # 在单元格右下角添加小按钮用于切换选项类型
+            if i == self.selected_chord_idx:
+                btn_size = 20
+                btn_rect = pygame.Rect(
+                    cell_rect.right - btn_size - 5,
+                    cell_rect.bottom - btn_size - 5,
+                    btn_size,
+                    btn_size
+                )
+                pygame.draw.rect(surface, self.colors['highlight'], btn_rect, border_radius=4)
+                font = self.font_manager.get_font(14)
+                text_surf = font.render("...", True, self.colors['text'])
+                text_rect = text_surf.get_rect(center=btn_rect.center)
+                surface.blit(text_surf, text_rect)
+                
+                # 检查是否点击了这个小按钮
+                mouse_pos = pygame.mouse.get_pos()
+                if pygame.mouse.get_pressed()[0] and btn_rect.collidepoint(mouse_pos):
+                    self._show_chord_options(i, (btn_rect.x, btn_rect.y), 'roman')
         
         # Reset clipping
         surface.set_clip(old_clip)
         
         # Draw scroll bar if needed
         if len(self.progression) * self.cell_width > self.rect.width:
-            # Draw scroll bar track
             pygame.draw.rect(
                 surface, 
                 self.colors['scroll_bar'], 
@@ -289,7 +393,6 @@ class ChordGridEditor:
                 border_radius=self.scroll_bar_height//2
             )
             
-            # Draw scroll thumb
             if self.scroll_thumb_rect:
                 pygame.draw.rect(
                     surface,
@@ -303,21 +406,52 @@ class ChordGridEditor:
             self._draw_option_panel(surface)
 
     def _draw_option_panel(self, surface: pygame.Surface):
-        """Draw the options panel"""
+        """Draw the options panel with scroll functionality"""
         pygame.draw.rect(surface, self.colors['option_panel'], self.option_panel_rect, border_radius=6)
         pygame.draw.rect(surface, self.colors['border'], self.option_panel_rect, 2, border_radius=6)
+        
+        # 设置选项面板的裁剪区域
+        old_clip = surface.get_clip()
+        surface.set_clip(self.option_panel_rect)
         
         mouse_pos = pygame.mouse.get_pos()
         font = self.font_manager.get_font(18)
         
-        for i, (item, rect) in enumerate(zip(self.option_items, self.option_rects)):
-            # Draw option background
-            if rect.collidepoint(mouse_pos):
-                pygame.draw.rect(surface, self.colors['highlight'], rect, border_radius=4)
-            else:
-                pygame.draw.rect(surface, self.colors['option_panel'], rect, border_radius=4)
+        # 绘制选项面板标题
+        if self.current_option_type:
+            title_text = ""
+            if self.current_option_type == 'roman':
+                title_text = "选择根音"
+            elif self.current_option_type == 'type':
+                title_text = "选择和弦类型"
+            elif self.current_option_type == 'inversion':
+                title_text = "选择转位"
             
-            pygame.draw.rect(surface, self.colors['border'], rect, 1, border_radius=4)
+            if title_text:
+                title_surf = font.render(title_text, True, self.colors['text'])
+                surface.blit(title_surf, (self.option_panel_rect.x + 10, self.option_panel_rect.y + 5 - self.option_scroll_offset))
+        
+        # 绘制选项
+        for i, (item, rect) in enumerate(zip(self.option_items, self.option_rects)):
+            # 调整rect位置考虑滚动偏移
+            adjusted_rect = pygame.Rect(
+                rect.x,
+                rect.y - self.option_scroll_offset,
+                rect.width,
+                rect.height
+            )
+            
+            # 只绘制可见的选项
+            if adjusted_rect.bottom < self.option_panel_rect.top or adjusted_rect.top > self.option_panel_rect.bottom:
+                continue
+                
+            # Draw option background
+            if adjusted_rect.collidepoint(mouse_pos):
+                pygame.draw.rect(surface, self.colors['highlight'], adjusted_rect, border_radius=4)
+            else:
+                pygame.draw.rect(surface, self.colors['option_panel'], adjusted_rect, border_radius=4)
+            
+            pygame.draw.rect(surface, self.colors['border'], adjusted_rect, 1, border_radius=4)
             
             # Draw option text
             key, value = item
@@ -329,5 +463,24 @@ class ChordGridEditor:
                 text = f"转位: {value}"
             
             text_surf = font.render(text, True, self.colors['text'])
-            text_rect = text_surf.get_rect(midleft=(rect.x + 10, rect.centery))
+            text_rect = text_surf.get_rect(midleft=(adjusted_rect.x + 10, adjusted_rect.centery))
             surface.blit(text_surf, text_rect)
+        
+        # 恢复裁剪区域
+        surface.set_clip(old_clip)
+        
+        # 如果选项内容超过面板高度，绘制滚动条
+        total_height = len(self.option_items) * 35 + 20
+        if total_height > self.option_panel_rect.height:
+            # 绘制滚动条轨道
+            scroll_bar_rect = pygame.Rect(
+                self.option_panel_rect.right - 8,
+                self.option_panel_rect.top,
+                8,
+                self.option_panel_rect.height
+            )
+            pygame.draw.rect(surface, self.colors['option_scroll_bar'], scroll_bar_rect, border_radius=4)
+            
+            # 绘制滚动条滑块
+            if self.option_scroll_thumb_rect:
+                pygame.draw.rect(surface, self.colors['option_scroll_thumb'], self.option_scroll_thumb_rect, border_radius=4)

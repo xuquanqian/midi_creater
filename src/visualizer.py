@@ -22,6 +22,10 @@ class PianoRoll:
         # 字体管理
         self.font_manager = FontManager()
 
+    def update(self, notes: List[int]):
+        """更新当前显示的和弦音符"""
+        self.chord_notes = notes
+
     def draw(self, surface: pygame.Surface):
         pygame.draw.rect(surface, (40, 40, 40), self.rect)
         
@@ -55,10 +59,12 @@ class ChordPreview:
         self.font_manager = FontManager()
     
     def update(self, chord_name: str, notes: List[int]):
+        """更新显示的和弦信息"""
         self.chord_name = chord_name
-        self.chord_notes = notes
+        self.chord_notes = notes.copy()  # 使用副本避免外部修改影响
     
     def draw(self, surface: pygame.Surface):
+        """绘制和弦预览区域"""
         pygame.draw.rect(surface, (60, 60, 80), self.rect)
         
         # 显示和弦名称
