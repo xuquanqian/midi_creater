@@ -41,6 +41,7 @@ class ChordGeneratorApp:
         self.key = "C"
         self.bpm = 120
         self.chord_style = "block"
+        self.default_duration = 1.0  # 默认持续1小节
         
         # UI区域定义
         self.ui_areas = {
@@ -78,7 +79,8 @@ class ChordGeneratorApp:
             self.progression.append({
                 "roman": roman.upper(),
                 "type": chord_type,
-                "inversion": 0
+                "inversion": 0,
+                "duration": self.default_duration  # 使用默认duration
             })
         
         logger.debug(f"加载完成 - 和弦数: {len(self.progression)}")
@@ -129,6 +131,22 @@ class ChordGeneratorApp:
                     self.export_midi()
                     pygame.time.delay(200)  # 防止重复触发
                     return True
+                
+                # 新增BPM调节
+                elif event.key == pygame.K_UP:
+                    self.bpm = min(240, self.bpm + 5)
+                    logger.info(f"BPM增加到: {self.bpm}")
+                elif event.key == pygame.K_DOWN:
+                    self.bpm = max(40, self.bpm - 5)
+                    logger.info(f"BPM减少到: {self.bpm}")
+                
+                # 新增duration调节
+                elif event.key == pygame.K_RIGHT:
+                    self.default_duration = min(4.0, self.default_duration + 0.25)
+                    logger.info(f"默认duration增加到: {self.default_duration}")
+                elif event.key == pygame.K_LEFT:
+                    self.default_duration = max(0.25, self.default_duration - 0.25)
+                    logger.info(f"默认duration减少到: {self.default_duration}")
             
             # 处理网格编辑器事件
             grid_handled = self.grid_editor.handle_event(event)
@@ -193,6 +211,14 @@ class ChordGeneratorApp:
             help_text, 
             (self.ui_areas['control_panel'].x + 20, self.ui_areas['control_panel'].y + 620)
         )
+        
+        # 新增BPM和duration显示
+        font = self.skin_manager.get_font(20)
+        bpm_text = font.render(f"BPM: {self.bpm} (上下键调节)", True, (255,255,255))
+        duration_text = font.render(f"时值: {self.default_duration}小节 (左右键调节)", True, (255,255,255))
+        
+        self.screen.blit(bpm_text, (self.ui_areas['control_panel'].x + 20, self.ui_areas['control_panel'].y + 550))
+        self.screen.blit(duration_text, (self.ui_areas['control_panel'].x + 20, self.ui_areas['control_panel'].y + 580))
         
         pygame.display.flip()
     

@@ -4,7 +4,7 @@ from typing import List, Dict, Tuple, Optional
 from constants import CHORD_TYPES, CHORD_TYPE_DISPLAY
 from custom_types import ChordConfig
 from utils.font_manager import FontManager
-from chord_generator import chord_to_name  # 新增导入
+from chord_generator import chord_to_name
 
 logger = logging.getLogger(__name__)
 
@@ -155,14 +155,23 @@ class ChordGridEditor:
             
             pygame.draw.rect(surface, color, cell_rect, border_radius=4)
             
-            # 修改的核心部分：使用chord_to_name显示实际和弦名称
+            # 显示和弦名称和duration
             chord_name = chord_to_name(self.key, chord['roman'], chord['type'])
             if chord.get('inversion', 0) > 0:
                 chord_name += f"/{chord['inversion']}"
             
+            duration = chord.get('duration', 1.0)
+            duration_text = f"{duration}拍"
+            
+            # 主和弦名称
             text_surf = self.font_manager.get_font(24).render(chord_name, True, self.colors['text'])
-            text_rect = text_surf.get_rect(center=cell_rect.center)
+            text_rect = text_surf.get_rect(center=(cell_rect.centerx, cell_rect.centery - 15))
             surface.blit(text_surf, text_rect)
+            
+            # duration显示
+            dur_surf = self.font_manager.get_font(16).render(duration_text, True, self.colors['text'])
+            dur_rect = dur_surf.get_rect(center=(cell_rect.centerx, cell_rect.centery + 15))
+            surface.blit(dur_surf, dur_rect)
         
         if self.show_options and self.option_items:
             self._draw_option_panel(surface)

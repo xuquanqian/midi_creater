@@ -8,6 +8,7 @@ class ChordConfig(TypedDict):
     roman: RomanNumeral
     type: ChordType
     inversion: int
+    duration: float  # 新增字段，持续小节数
 
 Progression = List[ChordConfig]
 ChordDatabase = Dict[str, Dict[str, List[str]]]
