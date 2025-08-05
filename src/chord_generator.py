@@ -1,14 +1,13 @@
-# chord_generator.py
-from mido import MidiFile, MidiTrack, Message
+from mido import MidiFile, MidiTrack, Message, MetaMessage
 import json
 
 CHORD_DB = {
     "日式ACG": {
-        "经典进行1": ["I", "V", "vi", "IV"],
-        "伤感进行": ["vi", "IV", "I", "V"]
+        "经典进行1": ["I", "V", "VI", "IV"],
+        "伤感进行": ["VI", "IV", "I", "V"]
     },
     "华语流行": {
-        "卡农进行": ["I", "V", "vi", "III", "IV", "I", "IV", "V"],
+        "卡农进行": ["I", "V", "VI", "III", "IV", "I", "IV", "V"],
         "4536": ["IV", "V", "III", "VI"]
     }
 }
@@ -28,7 +27,11 @@ CHORD_TYPES = {
 
 def chord_to_notes(key, roman_numeral, chord_type, inversion=0):
     """将罗马数字和弦转换为实际音符"""
-    scale_degrees = {'I': 0, 'II': 1, 'III': 2, 'IV': 3, 'V': 4, 'VI': 5, 'VII': 6}
+    roman_numeral = roman_numeral.upper()  # 统一转换为大写
+    
+    scale_degrees = {'I': 0, 'II': 1, 'III': 2, 'IV': 3, 
+                    'V': 4, 'VI': 5, 'VII': 6}
+    
     root_idx = scale_degrees[roman_numeral]
     root_note = SCALE_MAP[key][root_idx]
     
@@ -49,7 +52,8 @@ def generate_progression_midi(progression, key='C', bpm=120, chord_duration=1, s
     
     # 添加速度和节拍设置
     track.append(Message('program_change', program=0, time=0))
-    track.append(MetaMessage('set_tempo', tempo=mido.bpm2tempo(bpm)))
+    from mido import bpm2tempo
+    track.append(MetaMessage('set_tempo', tempo=bpm2tempo(bpm)))
     track.append(MetaMessage('time_signature', numerator=4, denominator=4))
     
     # 生成和弦序列
