@@ -5,6 +5,7 @@ from constants import (
     ROMAN_TO_DEGREE, CHORD_TYPE_DISPLAY
 )
 from custom_types import ChordConfig, ChordStyle
+from rhythm.handler import RhythmHandler
 import re
 import logging
 
@@ -22,7 +23,7 @@ def chord_to_name(key: str, roman_numeral: str, chord_type: str) -> str:
         '(min7)': 'm7',
         '(maj7)': 'maj7',
         '(7)': '7',
-        '(sus4)': 'sus4',  # 新增支持(sus4)，其他完全不变
+        '(sus4)': 'sus4',
         '(min7b5)': 'm7b5',
         '(b9)': '7b9'
     }
@@ -32,7 +33,7 @@ def chord_to_name(key: str, roman_numeral: str, chord_type: str) -> str:
     
     # 修复：使用统一的大小写处理
     for suffix, ctype in special_types.items():
-        suffix_upper = suffix.upper()  # 将后缀转为大写
+        suffix_upper = suffix.upper()
         if suffix_upper in cleaned_roman:
             actual_type = ctype
             cleaned_roman = cleaned_roman.replace(suffix_upper, "")
@@ -64,7 +65,7 @@ def chord_to_notes(key: str, roman_numeral: str, chord_type: str, inversion: int
         '(min7)': 'm7',
         '(maj7)': 'maj7',
         '(7)': '7',
-        '(sus4)': 'sus4',  # 新增支持(sus4)，其他完全不变
+        '(sus4)': 'sus4',
         '(min7b5)': 'm7b5',
         '(b9)': '7b9'
     }
@@ -74,7 +75,7 @@ def chord_to_notes(key: str, roman_numeral: str, chord_type: str, inversion: int
     
     # 修复：使用统一的大小写处理
     for suffix, ctype in special_types.items():
-        suffix_upper = suffix.upper()  # 将后缀转为大写
+        suffix_upper = suffix.upper()
         if suffix_upper in cleaned_roman:
             actual_type = ctype
             cleaned_roman = cleaned_roman.replace(suffix_upper, "")
@@ -106,36 +107,38 @@ def chord_to_notes(key: str, roman_numeral: str, chord_type: str, inversion: int
     notes = [root_note + offset for offset in offsets]
     return notes[inversion:] + [n + 12 for n in notes[:inversion]]
 
-def _generate_block_chord(track: MidiTrack, notes: List[int], ticks_per_measure: int, duration: float):
-    """生成柱式和弦"""
-    # 所有音符同时开始
-    for note in notes:
-        track.append(Message('note_on', note=60 + note, velocity=100, time=0))
-    
-    # 计算总时长
-    time_offset = int(ticks_per_measure * duration)
-    
-    # 先添加一个等待时间（所有音符持续的总时长）
-    track.append(Message('note_off', note=60 + notes[0], velocity=100, time=time_offset))
-    
-    # 其他音符的note_off事件（time=0表示与前一个事件同时发生）
-    for note in notes[1:]:
-        track.append(Message('note_off', note=60 + note, velocity=100, time=0))
+def _generate_block_chord(track: MidiTrack, notes: List[int], ticks_per_measure: int, 
+                         duration: float, rhythm: str = 'straight'):
+    """生成柱式和弦（带节奏处理）"""
+    RhythmHandler.apply_rhythm(
+        track=track,
+        notes=[60 + note for note in notes],
+        ticks=ticks_per_measure,
+        duration=duration,
+        rhythm=rhythm,
+        velocity=100
+    )
 
-def _generate_arpeggio(track: MidiTrack, notes: List[int], ticks_per_measure: int, duration: float):
-    """生成分解和弦"""
-    arp_time = int(ticks_per_measure * duration / len(notes))
-    for i, note in enumerate(notes):
-        track.append(Message('note_on', note=60 + note, velocity=80, time=0))
-        track.append(Message('note_off', note=60 + note, velocity=80, time=arp_time - 50))
+def _generate_arpeggio(track: MidiTrack, notes: List[int], ticks_per_measure: int,
+                      duration: float, rhythm: str = 'straight'):
+    """生成分解和弦（带节奏处理）"""
+    RhythmHandler.apply_rhythm(
+        track=track,
+        notes=[60 + note for note in notes],
+        ticks=ticks_per_measure,
+        duration=duration/len(notes),  # 分解和弦需要调整时长
+        rhythm=rhythm,
+        velocity=80
+    )
 
 def generate_progression_midi(
     progression: List[ChordConfig],
     key: str = 'C',
     bpm: int = 120,
-    style: ChordStyle = 'block'
+    style: ChordStyle = 'block',
+    rhythm: str = 'straight'
 ) -> MidiFile:
-    """生成MIDI文件"""
+    """生成MIDI文件（支持节奏参数）"""
     mid = MidiFile()
     track = MidiTrack()
     mid.tracks.append(track)
@@ -152,10 +155,11 @@ def generate_progression_midi(
     for chord in progression:
         chord_notes = chord_to_notes(key, chord['roman'], chord['type'], chord.get('inversion', 0))
         duration = chord.get('duration', 1.0)  # 默认1小节
+        chord_rhythm = chord.get('rhythm', rhythm)  # 优先使用和弦自身的节奏设置
         
         if style == 'block':
-            _generate_block_chord(track, chord_notes, ticks_per_measure, duration)
+            _generate_block_chord(track, chord_notes, ticks_per_measure, duration, chord_rhythm)
         elif style == 'arpeggio':
-            _generate_arpeggio(track, chord_notes, ticks_per_measure, duration)
+            _generate_arpeggio(track, chord_notes, ticks_per_measure, duration, chord_rhythm)
     
     return mid

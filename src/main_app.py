@@ -1,3 +1,4 @@
+# src/main_app.py
 import pygame
 import os
 import logging
@@ -13,6 +14,9 @@ from style_selector import StyleSelector
 from song_structure.section_manager import SectionManager
 from song_structure.clipboard import ChordClipboard
 from song_structure.structure_editor import StructureEditor
+from rhythm.editor import RhythmEditor
+from rhythm.handler import RhythmHandler
+from rhythm.types import RHYTHM_TYPES
 
 # 配置日志
 logging.basicConfig(
@@ -117,6 +121,205 @@ class Button:
             return True
         return False
 
+class RhythmSelector:
+    def __init__(self, rect: pygame.Rect, default_rhythm: str = 'straight'):
+        self.rect = rect
+        self.selected_rhythm = default_rhythm
+        self.expanded = False
+        self.options = RHYTHM_TYPES
+        self.option_rects = []
+        
+        # UI styling
+        self.colors = {
+            'background': (60, 60, 80),
+            'button': (80, 80, 100),
+            'hover': (100, 150, 200),
+            'text': (255, 255, 255),
+            'panel': (50, 50, 70),
+            'border': (30, 30, 30),
+            'scroll_bar': (80, 80, 100),
+            'scroll_thumb': (120, 120, 140)
+        }
+        
+        # 计算面板大小
+        self.panel_height = min(300, len(self.options) * 30 + 10)
+        self.panel_rect = pygame.Rect(
+            self.rect.x,
+            self.rect.y + self.rect.height + 5,
+            self.rect.width,
+            self.panel_height
+        )
+        
+        # 滚动相关
+        self.scroll_offset = 0
+        self.scroll_thumb_rect = None
+        self.scroll_dragging = False
+        self._update_scroll_thumb()
+
+    def _update_scroll_thumb(self):
+        """更新滚动条滑块位置和大小"""
+        total_height = len(self.options) * 30 + 10
+        if total_height <= self.panel_height:
+            self.scroll_thumb_rect = None
+            return
+            
+        thumb_height = max(30, int(self.panel_height * (self.panel_height / total_height)))
+        scroll_range = total_height - self.panel_height
+        thumb_pos = (self.scroll_offset / scroll_range) * (self.panel_height - thumb_height)
+        
+        self.scroll_thumb_rect = pygame.Rect(
+            self.panel_rect.right - 8,
+            self.panel_rect.top + thumb_pos,
+            6,
+            thumb_height
+        )
+
+    def handle_event(self, event: pygame.event.Event) -> bool:
+        """处理输入事件"""
+        if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
+            mouse_pos = event.pos
+            
+            # 检查主按钮点击
+            if self.rect.collidepoint(mouse_pos):
+                self.expanded = not self.expanded
+                return True
+                
+            # 检查选项点击
+            if self.expanded and self.panel_rect.collidepoint(mouse_pos):
+                if self.scroll_thumb_rect and self.scroll_thumb_rect.collidepoint(mouse_pos):
+                    self.scroll_dragging = True
+                    return True
+                    
+                for i, rect in enumerate(self.option_rects):
+                    adjusted_rect = pygame.Rect(
+                        rect.x,
+                        rect.y - self.scroll_offset,
+                        rect.width,
+                        rect.height
+                    )
+                    if adjusted_rect.collidepoint(mouse_pos):
+                        self.selected_rhythm = self.options[i]
+                        self.expanded = False
+                        return True
+                        
+            # 点击其他地方收起选项
+            if self.expanded and not self.panel_rect.collidepoint(mouse_pos):
+                self.expanded = False
+                return True
+                
+        elif event.type == pygame.MOUSEBUTTONUP:
+            self.scroll_dragging = False
+            
+        elif event.type == pygame.MOUSEMOTION:
+            if self.scroll_dragging and self.scroll_thumb_rect:
+                mouse_y = event.pos[1]
+                panel_top = self.panel_rect.top
+                panel_bottom = self.panel_rect.bottom
+                
+                thumb_height = self.scroll_thumb_rect.height
+                new_thumb_top = max(panel_top, min(mouse_y - thumb_height/2, panel_bottom - thumb_height))
+                
+                total_height = len(self.options) * 30 + 10
+                scroll_range = total_height - self.panel_height
+                thumb_range = self.panel_height - thumb_height
+                if thumb_range > 0:
+                    self.scroll_offset = ((new_thumb_top - panel_top) / thumb_range) * scroll_range
+                    self.scroll_offset = max(0, min(self.scroll_offset, scroll_range))
+                    self._update_scroll_thumb()
+                return True
+                
+        elif event.type == pygame.MOUSEWHEEL and self.expanded:
+            total_height = len(self.options) * 30 + 10
+            max_offset = max(0, total_height - self.panel_height)
+            self.scroll_offset = max(0, min(max_offset, self.scroll_offset - event.y * 20))
+            self._update_scroll_thumb()
+            return True
+                
+        return False
+
+    def draw(self, surface: pygame.Surface):
+        """Draw the selector"""
+        # Draw main button
+        mouse_pos = pygame.mouse.get_pos()
+        btn_color = self.colors['hover'] if self.rect.collidepoint(mouse_pos) else self.colors['button']
+        
+        pygame.draw.rect(surface, btn_color, self.rect, border_radius=6)
+        pygame.draw.rect(surface, self.colors['border'], self.rect, 2, border_radius=6)
+        
+        # Draw button text
+        font = pygame.font.SysFont('Arial', 18)
+        text = font.render(self.selected_rhythm, True, self.colors['text'])
+        text_rect = text.get_rect(center=self.rect.center)
+        surface.blit(text, text_rect)
+        
+        # Draw dropdown arrow
+        arrow_size = 8
+        arrow_points = [
+            (self.rect.right - 15, self.rect.centery - arrow_size//2),
+            (self.rect.right - 10, self.rect.centery + arrow_size//2),
+            (self.rect.right - 5, self.rect.centery - arrow_size//2)
+        ]
+        pygame.draw.polygon(surface, self.colors['text'], arrow_points)
+        
+        # Draw options panel if expanded
+        if self.expanded:
+            self._draw_options_panel(surface)
+
+    def _draw_options_panel(self, surface: pygame.Surface):
+        """Draw the options panel with scroll functionality"""
+        pygame.draw.rect(surface, self.colors['panel'], self.panel_rect, border_radius=6)
+        pygame.draw.rect(surface, self.colors['border'], self.panel_rect, 2, border_radius=6)
+        
+        # 设置裁剪区域
+        old_clip = surface.get_clip()
+        surface.set_clip(self.panel_rect)
+        
+        mouse_pos = pygame.mouse.get_pos()
+        font = pygame.font.SysFont('Arial', 16)
+        self.option_rects = []
+        
+        for i, option in enumerate(self.options):
+            option_rect = pygame.Rect(
+                self.panel_rect.x + 5,
+                self.panel_rect.y + 5 + i * 30 - self.scroll_offset,
+                self.panel_rect.width - 10,
+                28
+            )
+            self.option_rects.append(option_rect)
+            
+            # 只绘制可见的选项
+            if option_rect.bottom < self.panel_rect.top or option_rect.top > self.panel_rect.bottom:
+                continue
+                
+            # Draw option background
+            color = self.colors['hover'] if option_rect.collidepoint(mouse_pos) else self.colors['panel']
+            pygame.draw.rect(surface, color, option_rect, border_radius=4)
+            pygame.draw.rect(surface, self.colors['border'], option_rect, 1, border_radius=4)
+            
+            # Draw option text
+            text = font.render(option, True, self.colors['text'])
+            text_rect = text.get_rect(midleft=(option_rect.x + 10, option_rect.centery))
+            surface.blit(text, text_rect)
+        
+        # 恢复裁剪区域
+        surface.set_clip(old_clip)
+        
+        # 绘制滚动条
+        total_height = len(self.options) * 30 + 10
+        if total_height > self.panel_height:
+            # 绘制滚动条轨道
+            scroll_bar_rect = pygame.Rect(
+                self.panel_rect.right - 8,
+                self.panel_rect.top,
+                8,
+                self.panel_height
+            )
+            pygame.draw.rect(surface, self.colors['scroll_bar'], scroll_bar_rect, border_radius=4)
+            
+            # 绘制滚动条滑块
+            if self.scroll_thumb_rect:
+                pygame.draw.rect(surface, self.colors['scroll_thumb'], self.scroll_thumb_rect, border_radius=4)
+
 class ChordGeneratorApp:
     def __init__(self):
         logger.info("=== 应用程序初始化开始 ===")
@@ -137,6 +340,7 @@ class ChordGeneratorApp:
         self.chord_style = "block"
         self.default_duration = 1.0
         self.is_maximized = False
+        self.rhythm_type = "straight"
         
         # 新增段落管理相关初始化
         self.section_manager = SectionManager()
@@ -145,8 +349,7 @@ class ChordGeneratorApp:
         
         # 初始化UI区域和组件
         self._init_ui_layout()
-        
-        self.skin_manager = SkinManager()
+        self._init_components()
         self._init_fonts()
         self._init_ui_elements()
         
@@ -163,11 +366,6 @@ class ChordGeneratorApp:
     
     def _init_ui_layout(self):
         """初始化UI布局"""
-        self._init_ui_areas()
-        self._init_components()
-    
-    def _init_ui_areas(self):
-        """初始化UI区域"""
         width, height = self.screen.get_size()
         
         # 控制面板保持固定宽度300px，高度自适应
@@ -186,7 +384,8 @@ class ChordGeneratorApp:
             'chord_preview': pygame.Rect(control_width + 40, 220, content_width, 120),
             'progression_grid': pygame.Rect(control_width + 40, 360, content_width, control_height - 360),
             'style_selector': pygame.Rect(width - style_width - 20, 20, style_width, control_height),
-            'structure_editor': pygame.Rect(20, height - 50, width - 40, 50)
+            'structure_editor': pygame.Rect(20, height - 50, width - 40, 50),
+            'rhythm_editor': pygame.Rect(control_width + 40, 300, content_width, 50)
         }
     
     def _init_components(self):
@@ -196,6 +395,7 @@ class ChordGeneratorApp:
         self.grid_editor = ChordGridEditor(self.ui_areas['progression_grid'])
         self.style_selector = StyleSelector(self.ui_areas['style_selector'])
         self.structure_editor = StructureEditor(self.ui_areas['structure_editor'], self.section_manager)
+        self.rhythm_editor = RhythmEditor(self.ui_areas['rhythm_editor'])
         
         # 确保组件有正确的和弦数据
         if hasattr(self, 'progression'):
@@ -246,6 +446,8 @@ class ChordGeneratorApp:
             'style_label': (control_x, control_y + 140),
             'style_value': (control_x + 100, control_y + 140),
             'style_toggle': (control_x, control_y + 180),
+            'rhythm_label': (control_x, control_y + 220),
+            'rhythm_value': (control_x + 100, control_y + 220),
             'play': (control_x, control_y + 240),
             'stop': (control_x, control_y + 300),
             'export': (control_x, control_y + 520),
@@ -309,6 +511,12 @@ class ChordGeneratorApp:
                 (140, 100, 180)
             )
         }
+        
+        # 替换原来的节奏按钮为新的节奏选择器
+        self.rhythm_selector = RhythmSelector(
+            pygame.Rect(*self.control_elements['rhythm_value'], 150, 30),
+            self.rhythm_type
+        )
 
     def toggle_maximize(self):
         """切换最大化状态"""
@@ -348,12 +556,14 @@ class ChordGeneratorApp:
                 "roman": clean_roman,
                 "type": chord_type,
                 "inversion": 0,
-                "duration": self.default_duration
+                "duration": self.default_duration,
+                "rhythm": self.rhythm_type  # 添加默认节奏型
             })
     
         # 更新当前段落的和弦进行
         self.section_manager.set_current_progression(self.progression)
-        self.grid_editor.set_progression(self.progression)
+        if hasattr(self, 'grid_editor'):  # 确保grid_editor已初始化
+            self.grid_editor.set_progression(self.progression)
         self.update_chord_display()
 
     def update_chord_display(self):
@@ -398,12 +608,24 @@ class ChordGeneratorApp:
                 self.load_current_progression()
                 return True
             
-            # 新增段落编辑器事件处理
+            # 处理段落编辑器事件
             if self.structure_editor.handle_event(event):
                 # 段落切换后更新当前和弦进行
                 self.progression = self.section_manager.get_current_progression()
                 self.grid_editor.set_progression(self.progression)
                 self.update_chord_display()
+                return True
+            
+            # 处理节奏编辑器事件
+            if self.rhythm_editor.handle_event(event):
+                return True
+            
+            # 处理节奏选择器事件
+            if self.rhythm_selector.handle_event(event):
+                self.rhythm_type = self.rhythm_selector.selected_rhythm
+                # 更新当前和弦的节奏型
+                for chord in self.progression:
+                    chord['rhythm'] = self.rhythm_type
                 return True
             
             if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
@@ -433,7 +655,8 @@ class ChordGeneratorApp:
                             progression=self.section_manager.get_current_progression(),
                             key=self.key,
                             bpm=self.bpm,
-                            style=self.chord_style
+                            style=self.chord_style,
+                            rhythm=self.rhythm_type
                         )
                         midi_path = self.midi_player.save_midi(midi)
                         if midi_path:
@@ -474,7 +697,8 @@ class ChordGeneratorApp:
                 progression=self.progression,
                 key=self.key,
                 bpm=self.bpm,
-                style=self.chord_style
+                style=self.chord_style,
+                rhythm=self.rhythm_type
             )
             # 让用户选择保存位置
             import tkinter as tk
@@ -506,7 +730,9 @@ class ChordGeneratorApp:
         self.chord_display.draw(self.screen)
         self.grid_editor.draw(self.screen)
         self.style_selector.draw(self.screen)
-        self.structure_editor.draw(self.screen)  # 新增段落编辑器绘制
+        self.structure_editor.draw(self.screen)
+        self.rhythm_editor.draw(self.screen)
+        self.rhythm_selector.draw(self.screen)  # 绘制节奏选择器
         
         # 绘制按钮
         for button in self.buttons.values():
@@ -539,6 +765,10 @@ class ChordGeneratorApp:
             (255, 255, 255)
         )
         self.screen.blit(current_style, self.control_elements['style_value'])
+        
+        # 绘制节奏标签
+        rhythm_text = self.ui_font.render("节奏型:", True, (220, 220, 240))
+        self.screen.blit(rhythm_text, self.control_elements['rhythm_label'])
         
         pygame.display.flip()
     

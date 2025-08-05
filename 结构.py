@@ -1,5 +1,10 @@
 midi_creater
 ├── src/                  # 源代码
+│   ├── rhythm
+│   │   ├── __init__.py
+│   │   ├── editor.py
+│   │   ├── handler.py
+│   │   └── types.py
 │   ├── song_structure/          # 新增目录
 │   │   ├── __init__.py
 │   │   ├── section_manager.py   # 段落管理核心逻辑

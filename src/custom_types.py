@@ -12,6 +12,7 @@ class ChordConfig(TypedDict):
     type: ChordType
     inversion: int
     duration: float
+    rhythm: str  # 新增字段
 
 # 新增 SongSection 类型
 class SongSection(TypedDict):
