@@ -114,6 +114,31 @@ class ChordGeneratorApp:
             running = self.handle_events()
             self.draw()
             clock.tick(30)
+            
+    def draw_progression_grid(self):
+        # 绘制和弦网格
+        for i, chord in enumerate(self.progression):
+            rect = pygame.Rect(
+                self.progression_grid.x + i * 80,
+                self.progression_grid.y,
+                70,
+                self.progression_grid.height
+            )
+            color = (100, 150, 200) if i == self.selected_chord_idx else (70, 70, 90)
+            pygame.draw.rect(self.screen, color, rect, border_radius=5)
+        
+            # 显示和弦信息
+            font = pygame.font.SysFont(None, 24)
+            text = font.render(f"{chord['roman']}{chord['type']}", True, (255, 255, 255))
+            self.screen.blit(text, (rect.x + 10, rect.y + 10))
+
+    def handle_grid_click(self, pos):
+        # 检测和弦块点击
+        if self.progression_grid.collidepoint(pos):
+            index = (pos[0] - self.progression_grid.x) // 80
+            if index < len(self.progression):
+                self.selected_chord_idx = index
+                self.update_chord_display()
 
 if __name__ == "__main__":
     app = ChordGeneratorApp()
